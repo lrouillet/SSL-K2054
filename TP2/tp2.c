@@ -3,21 +3,23 @@
 #include <string.h>
 #include <unistd.h>
 
-char* leer_archivo(char* filename);
-void getCSV(char* data, char* destination);
-char* getColumnValue(char* row, int columnNumber);
-char* replaceString(char* s, char* oldW, char* newW);
+char* readFile(char* filename);
+void processData(char* data, char* destination);
+void printLine(char** columns);
+void addRowToHtml(FILE* htmlFile, char* species, char* variation, char* purchaseValue, char* saleValue, char* apertureValue);
 
-int VARIATION_COLUMN = 8;
+int VARIATION_COLUMN = 7;
+int SPECIES_COLUMN = 0;
 
 int main (void)
 {
-    char* fileContent = leer_archivo("./SSL-TP2.html");
+    char* fileContent = readFile("./SSL-TP2.html");
     char* csv = NULL;
     int dataStartPosition = 0;
     int startPositionFound = 0;
     int endPositionFound = 0;
     int i = 0;
+    char html[500000];
 
     for(i = 0; *(fileContent + i) != '\0' && !startPositionFound; i++) {
         if (*(fileContent + i) == '<' && strncmp(fileContent + i, "<tbody>", 7) == 0) {
@@ -35,10 +37,14 @@ int main (void)
         i++;
     }
 
-    getCSV(fileContent + dataStartPosition, csv);
+    processData(fileContent + dataStartPosition, csv);
 }
 
-char* leer_archivo(char* filename)
+void printLine(char** columns) {
+    printf("%s %s\n", columns[SPECIES_COLUMN], columns[VARIATION_COLUMN]);
+}
+
+char* readFile(char* filename)
 {
     FILE* file = fopen(filename,"r");
     if(file == NULL)
@@ -57,16 +63,25 @@ char* leer_archivo(char* filename)
     return content;
 }
 
-void getCSV(char* data, char* destination)
+void processData(char* data, char* destination)
 {
     int i = 0;
     int rowOpenTag = 0;
     int dataOpenTag = 0;
     int spanOpenTag = 0;
     int iOpenTag = 0;
-    char auxString[500000];
+    char csv[500000];
+    char csvHeader[] = "Especie;Precio de compra;Precio de venta;Apertura;Precio Máximo;Precio Mínimo\n";
+    char htmlHead[] = "<html>\n<table>\n<thead>\n<tr><th>Especie</th><th>Variacion</th></tr>\n</thead>\n";
+    char htmlTail[] = "</table>\n</html>";
+    char csvRowBuffer[20000];
+    char* rest = csv;
     int lastIndex = 0;
     char auxChar;
+    char* row;
+    char* columns[16];
+    FILE* csvFile;
+    FILE* htmlFile;
 
     while(*(data + i) != '\0') {
         if (*(data + i) == '<') {
@@ -79,11 +94,11 @@ void getCSV(char* data, char* destination)
             } else if(strncmp(data + i, "<i", 2) == 0) {
                 iOpenTag = 1;
             } else if(strncmp(data + i, "</tr", 4) == 0) {
-                auxString[lastIndex] = '\n';
+                csv[lastIndex] = '\n';
                 lastIndex++;
                 i+=4;
             } else if(strncmp(data + i, "</td", 4) == 0) {
-                auxString[lastIndex] = ';';
+                csv[lastIndex] = ';';
                 lastIndex++;
                 i+=4;
             } else if(strncmp(data + i, "</span", 6) == 0) {
@@ -103,52 +118,48 @@ void getCSV(char* data, char* destination)
             }
         } else if (!rowOpenTag && !dataOpenTag && !spanOpenTag && !iOpenTag) {
             auxChar = *(data + i);
-            auxString[lastIndex] = auxChar;
+            csv[lastIndex] = auxChar;
             lastIndex++;
         }
 
         i++;
     }
-    auxString[lastIndex] = '\0';
+    csv[lastIndex] = '\0';
 
-    printf("%s", auxString);
+    row = strtok_r(csv, "\n", &rest);
 
-    destination = (char*) malloc(sizeof(auxString));
-    strcpy(destination, auxString);
-}
-
-char* getColumnValue(char* row, int columnNumber) {
-    return "test";
-}
-
-char* replaceString(char* s, char* oldW, char* newW)
-{
-    char* result;
-    int i, cnt = 0;
-    int newWlen = strlen(newW);
-    int oldWlen = strlen(oldW);
-  
-    for (i = 0; s[i] != '\0'; i++) {
-        if (strstr(&s[i], oldW) == &s[i]) {
-            cnt++;
-  
-            i += oldWlen - 1;
+    csvFile = fopen("./csvReport.csv", "w");
+    htmlFile = fopen("./htmlReport.html", "w");
+    fwrite(htmlHead, strlen(htmlHead), 1, htmlFile);
+    fwrite(csvHeader, strlen(csvHeader), 1, csvFile);
+    
+    while( row != NULL ) {
+        columns[0] = strtok(row, ";");
+        for(i=1; i<16; i++) {
+            columns[i] = strtok(NULL, ";");
         }
+
+        if(strchr(columns[VARIATION_COLUMN], '-') != NULL) {
+            printLine(columns);
+            addRowToHtml(htmlFile, columns[0], columns[7], columns[3], columns[4], columns[8]);
+        }
+
+        snprintf(csvRowBuffer, sizeof(csvRowBuffer), "%s;%s;%s;%s;%s;%s\n", columns[0], columns[3], columns[4], columns[8], columns[9], columns[10]);
+        fwrite(csvRowBuffer, strlen(csvRowBuffer), 1, csvFile);
+
+        row = strtok_r(NULL, "\n", &rest);
     }
 
-    result = (char*)malloc(i + cnt * (newWlen - oldWlen) + 1);
-  
-    i = 0;
-    while (*s) {
-        if (strstr(s, oldW) == s) {
-            strcpy(&result[i], newW);
-            i += newWlen;
-            s += oldWlen;
-        }
-        else
-            result[i++] = *s++;
-    }
-  
-    result[i] = '\0';
-    return result;
+    fwrite(htmlTail, strlen(htmlTail), 1, htmlFile);
+
+    fclose(csvFile);
+    fclose(htmlFile);
+}
+
+void addRowToHtml(FILE* htmlFile, char* species, char* variation, char* purchaseValue, char* saleValue, char* apertureValue) {
+    float aValueFloat = atof(apertureValue);
+    float pValueFloat = atof(purchaseValue);
+    float sValueFloat = atof(saleValue);
+
+    fprintf(htmlFile, "<tr><td>%s</td><td>%s</td></tr>\n", species, variation);
 }
