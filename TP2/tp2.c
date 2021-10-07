@@ -5,8 +5,8 @@
 
 char* readFile(char* filename);
 void processData(char* data, char* destination);
-void printLine(char** columns);
-void addRowToHtml(FILE* htmlFile, char* species, char* variation, char* purchaseValue, char* saleValue, char* apertureValue);
+void addRowToHtml(char* htmlContent, char** columns);
+void addRowtoPrintCSV(char* printContent, char** columns);
 
 int VARIATION_COLUMN = 7;
 int SPECIES_COLUMN = 0;
@@ -19,7 +19,6 @@ int main (void)
     int startPositionFound = 0;
     int endPositionFound = 0;
     int i = 0;
-    char html[500000];
 
     for(i = 0; *(fileContent + i) != '\0' && !startPositionFound; i++) {
         if (*(fileContent + i) == '<' && strncmp(fileContent + i, "<tbody>", 7) == 0) {
@@ -40,8 +39,10 @@ int main (void)
     processData(fileContent + dataStartPosition, csv);
 }
 
-void printLine(char** columns) {
-    printf("%s %s\n", columns[SPECIES_COLUMN], columns[VARIATION_COLUMN]);
+void addRowtoPrintCSV(char* printContent, char** columns) {
+    char buff[500000];
+    snprintf(buff, sizeof(buff), "%s %s\n", columns[SPECIES_COLUMN], columns[VARIATION_COLUMN]);
+    strcat(printContent, buff);
 }
 
 char* readFile(char* filename)
@@ -80,8 +81,15 @@ void processData(char* data, char* destination)
     char auxChar;
     char* row;
     char* columns[16];
-    FILE* csvFile;
-    FILE* htmlFile;
+
+    char csvContent[500000];
+    char htmlContent[500000];
+    char printContent[500000];
+
+    char selectedOption;
+
+    FILE* csvFile = NULL;
+    FILE* htmlFile = NULL;
 
     while(*(data + i) != '\0') {
         if (*(data + i) == '<') {
@@ -127,11 +135,6 @@ void processData(char* data, char* destination)
     csv[lastIndex] = '\0';
 
     row = strtok_r(csv, "\n", &rest);
-
-    csvFile = fopen("./csvReport.csv", "w");
-    htmlFile = fopen("./htmlReport.html", "w");
-    fwrite(htmlHead, strlen(htmlHead), 1, htmlFile);
-    fwrite(csvHeader, strlen(csvHeader), 1, csvFile);
     
     while( row != NULL ) {
         columns[0] = strtok(row, ";");
@@ -140,26 +143,65 @@ void processData(char* data, char* destination)
         }
 
         if(strchr(columns[VARIATION_COLUMN], '-') != NULL) {
-            printLine(columns);
-            addRowToHtml(htmlFile, columns[0], columns[7], columns[3], columns[4], columns[8]);
+            addRowtoPrintCSV(printContent, columns);
+            addRowToHtml(htmlContent, columns);
         }
 
         snprintf(csvRowBuffer, sizeof(csvRowBuffer), "%s;%s;%s;%s;%s;%s\n", columns[0], columns[3], columns[4], columns[8], columns[9], columns[10]);
-        fwrite(csvRowBuffer, strlen(csvRowBuffer), 1, csvFile);
+        strcat(csvContent, csvRowBuffer);
 
         row = strtok_r(NULL, "\n", &rest);
     }
 
-    fwrite(htmlTail, strlen(htmlTail), 1, htmlFile);
+    while(selectedOption != 'q') {
+        printf("Elija una opcion:\n");
+        printf("A: Imprimir especies con variacion negativa por consola\n");
+        printf("B: Crear reporte CSV.\n");
+        printf("C: Crear reporte HTML.\n");
+        printf("q: Salir del programa.\n\n");
 
-    fclose(csvFile);
-    fclose(htmlFile);
+        scanf(" %c", &selectedOption);
+        switch(selectedOption) {
+            case 'A':
+                printf("%s\n", printContent);
+            break;
+            case 'B':
+                csvFile = fopen("./csvReport.csv", "w");
+                fwrite(csvHeader, strlen(csvHeader), 1, csvFile);
+                fwrite(csvContent, strlen(csvContent), 1, csvFile);
+                fclose(csvFile);
+                printf("Reporte CSV generado. \n\n");
+            break;
+            case 'C':
+                htmlFile = fopen("./htmlReport.html", "w");
+                fwrite(htmlHead, strlen(htmlHead), 1, htmlFile);
+                fwrite(htmlContent, strlen(htmlContent), 1, htmlFile);
+                fwrite(htmlTail, strlen(htmlTail), 1, htmlFile);
+                fclose(htmlFile);
+                printf("Reporte HTML generado. \n\n");
+            break;
+            case 'q':
+                printf("Hasta luego! \n");
+            break;
+            default:
+                printf("Opcion incorrecta. \n");
+        }
+    }
 }
 
-void addRowToHtml(FILE* htmlFile, char* species, char* variation, char* purchaseValue, char* saleValue, char* apertureValue) {
-    float aValueFloat = atof(apertureValue);
-    float pValueFloat = atof(purchaseValue);
-    float sValueFloat = atof(saleValue);
+void addRowToHtml(char* htmlContent, char** columns) {
+    float aValue = atof(columns[8]);
+    float pValue = atof(columns[3]);
+    float sValue = atof(columns[4]);
+    char backgroundColor[6];
 
-    fprintf(htmlFile, "<tr><td>%s</td><td>%s</td></tr>\n", species, variation);
+    if(aValue > pValue && aValue > sValue) {
+        strcat(backgroundColor, "green");
+    } else {
+        strcat(backgroundColor, "none");
+    }
+
+    char htmlRowBuffer[500000];
+    snprintf(htmlRowBuffer, sizeof(htmlRowBuffer), "<tr style=\"background-color:%s\"><td>%s</td><td>%s</td></tr>\n", backgroundColor, columns[0], columns[7]);
+    strcat(htmlContent, htmlRowBuffer);
 }
